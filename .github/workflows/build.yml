@@ -1,0 +1,50 @@
+name: Build app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # Built unsigned: SideStore signs the app with your own Apple ID when it installs it.
+      - name: Build phone app
+        run: |
+          xcodebuild -project GolfTracker.xcodeproj -scheme GolfTracker \
+            -sdk iphoneos -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: Build watch app
+        run: |
+          xcodebuild -project GolfTracker.xcodeproj -scheme GolfTrackerWatch \
+            -sdk watchos -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: Package .ipa with the watch app inside
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/GolfTracker.app Payload/
+          mkdir -p Payload/GolfTracker.app/Watch
+          cp -R build/Build/Products/Release-watchos/GolfTrackerWatch.app Payload/GolfTracker.app/Watch/
+          zip -qr GolfTracker.ipa Payload
+          unzip -l GolfTracker.ipa | grep -E "Info.plist$"
+
+      - name: Publish download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Golf Tracker build ${{ github.run_number }}
+          files: GolfTracker.ipa
+          make_latest: true

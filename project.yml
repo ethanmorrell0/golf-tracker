@@ -1,0 +1,40 @@
+name: GolfTracker
+options:
+  bundleIdPrefix: com.ethanmorrell
+  deploymentTarget:
+    iOS: "16.0"
+    watchOS: "9.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  GolfTracker:
+    type: application
+    platform: iOS
+    sources: [Phone]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ethanmorrell.golftracker
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Golf Tracker
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Shows your position on the course.
+
+  GolfTrackerWatch:
+    type: application
+    platform: watchOS
+    sources: [Watch]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ethanmorrell.golftracker.watchkitapp
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Golf Tracker
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.ethanmorrell.golftracker
+        INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: NO
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Measures where you hit each shot.
+        SKIP_INSTALL: YES
