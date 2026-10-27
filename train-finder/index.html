@@ -1,0 +1,331 @@
+<title>Pickup Station Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@500;600&display=swap">
+<style>
+  /* Layout: one narrow column, trip form on top, ranked stations below like a departure list.
+     Motorway blue marks anything about driving, ticket amber anything about the train. */
+  :root {
+    --paper: #eef2f5;
+    --card: #ffffff;
+    --ink: #13202e;
+    --muted: #5a6b7c;
+    --line: #cfd8e0;
+    --motorway: #155aa8;
+    --motorway-ink: #ffffff;
+    --amber: #a85f00;
+    --amber-soft: #fbefdc;
+    --good: #1e7a4c;
+    --good-soft: #e1f2e8;
+    --focus: #155aa8;
+    --font-display: "Overpass", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "Overpass", "Helvetica Neue", Arial, sans-serif;
+    --font-data: "Overpass Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e161f; --card: #16212c; --ink: #e5ecf2; --muted: #93a4b5; --line: #2a3846;
+      --motorway: #3d7fd1; --motorway-ink: #ffffff; --amber: #f0a23a; --amber-soft: #33240f;
+      --good: #4cc38a; --good-soft: #10291d; --focus: #6aa5ee; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e161f; --card: #16212c; --ink: #e5ecf2; --muted: #93a4b5; --line: #2a3846;
+    --motorway: #3d7fd1; --motorway-ink: #ffffff; --amber: #f0a23a; --amber-soft: #33240f;
+    --good: #4cc38a; --good-soft: #10291d; --focus: #6aa5ee; color-scheme: dark;
+  }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-body); font-size: 1rem; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 1.5rem 3rem;
+  }
+  .wrap { max-width: 44rem; margin: 0 auto; display: grid; gap: 1.5rem; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+  h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.01em; }
+  h2 { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  h3 { font-size: 1.2rem; font-weight: 800; }
+  p { margin: 0; }
+  .lede { color: var(--muted); max-width: 60ch; }
+  header { display: grid; gap: 0.4rem; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; display: grid; gap: 1rem; }
+  .field { display: grid; gap: 0.3rem; min-width: 0; }
+  label, .label { font-size: 0.8rem; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+  input, select {
+    font: inherit; color: var(--ink); background: var(--paper);
+    border: 1px solid var(--line); border-radius: 6px; padding: 0.5rem 0.6rem; width: 100%; min-width: 0;
+  }
+  input:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  input.invalid { border-color: var(--amber); }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
+  .hint { font-size: 0.8rem; color: var(--muted); }
+
+  .traveller { display: grid; grid-template-columns: 7rem 1fr auto; gap: 0.5rem; align-items: end; }
+  @media (max-width: 420px) { .traveller { grid-template-columns: 1fr auto; } .traveller .who { grid-column: 1 / -1; } }
+
+  button, .btn {
+    font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;
+    border-radius: 6px; padding: 0.45rem 0.75rem; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem;
+  }
+  button:hover, .btn:hover { border-color: var(--muted); }
+  .btn.rail { border-color: var(--amber); color: var(--amber); }
+  .btn.road { border-color: var(--motorway); color: var(--motorway); }
+  .icon-btn { padding: 0.45rem 0.6rem; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+  details[open] summary { margin-bottom: 0.75rem; }
+
+  .results-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .stops { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+  .stop { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; display: grid; grid-template-columns: 2rem 1fr auto; gap: 0.25rem 0.75rem; }
+  .stop.best { border-color: var(--good); box-shadow: 0 0 0 1px var(--good); }
+  .rank { font-family: var(--font-data); font-weight: 600; color: var(--muted); font-size: 1.1rem; padding-top: 0.1rem; }
+  .stop h3 { min-width: 0; align-self: center; }
+  .stop-main { grid-column: 2 / -1; display: grid; gap: 0.6rem; min-width: 0; }
+  .total { text-align: right; font-family: var(--font-data); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .total small { display: block; font-family: var(--font-body); font-size: 0.7rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .crs { font-family: var(--font-data); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0.05rem 0.3rem; vertical-align: middle; margin-left: 0.3rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .chip { font-size: 0.8rem; font-weight: 600; border-radius: 4px; padding: 0.15rem 0.45rem; font-variant-numeric: tabular-nums; }
+  .chip.drive { background: var(--motorway); color: var(--motorway-ink); }
+  .chip.real { background: var(--good-soft); color: var(--good); }
+  .chip.est { background: var(--amber-soft); color: var(--amber); }
+
+  .legs { display: grid; gap: 0.6rem; }
+  .leg { display: grid; grid-template-columns: 1fr 5.5rem 5rem auto; gap: 0.5rem; align-items: end; border-top: 1px dashed var(--line); padding-top: 0.6rem; }
+  .leg-who { font-size: 0.9rem; min-width: 0; }
+  .leg-who b { font-weight: 600; }
+  .leg-who span { display: block; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .leg input { padding: 0.35rem 0.45rem; font-family: var(--font-data); font-size: 0.9rem; }
+  @media (max-width: 480px) { .leg { grid-template-columns: 1fr 1fr; } .leg-who { grid-column: 1 / -1; } .leg .btn { grid-column: 1 / -1; justify-content: center; } }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .ghost { border-color: transparent; color: var(--muted); }
+
+  .empty { color: var(--muted); padding: 1rem 0; }
+  .notes { font-size: 0.85rem; color: var(--muted); display: grid; gap: 0.5rem; max-width: 65ch; }
+  .notes a { color: inherit; }
+  @media (prefers-reduced-motion: no-preference) { .stop { transition: border-color 0.2s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Pickup Station Finder</h1>
+    <p class="lede">One of you drives, the rest come by train. Find the station on the driver's way where the train fares, the detour and everyone's time add up cheapest.</p>
+  </header>
+
+  <form class="panel" id="trip" autocomplete="off">
+    <h2>The trip</h2>
+    <div class="row">
+      <div class="field">
+        <label for="destination">Everyone ends up at</label>
+        <input id="destination" list="station-list" placeholder="Station, or lat, lng">
+      </div>
+      <div class="field">
+        <label for="driver">Driver sets off from</label>
+        <input id="driver" list="station-list" placeholder="Station, or lat, lng">
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="label">Coming by train</span>
+      <div id="travellers" class="legs"></div>
+      <div><button type="button" id="add-traveller">Add someone</button></div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="when">Leaving around</label>
+        <input id="when" type="datetime-local">
+      </div>
+    </div>
+
+    <details>
+      <summary>How costs are weighed</summary>
+      <div class="row">
+        <div class="field"><label for="maxDetour">Longest detour the driver will take (min)</label><input id="maxDetour" type="number" min="5" max="120" step="5"></div>
+        <div class="field"><label for="fuel">Fuel per extra mile (£)</label><input id="fuel" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="driverTime">Driver's hour of detour is worth (£)</label><input id="driverTime" type="number" min="0" step="1"></div>
+        <div class="field"><label for="travellerTime">An hour on the train is worth (£)</label><input id="travellerTime" type="number" min="0" step="1"></div>
+      </div>
+    </details>
+    <p class="hint">For somewhere that isn't a station, like a golf club, paste its coordinates from Google Maps (for example 52.6369, -1.1398).</p>
+    <datalist id="station-list"></datalist>
+  </form>
+
+  <section class="wrap" style="gap:0.75rem" aria-live="polite">
+    <div class="results-head">
+      <h2 id="results-title">Best pickup stations</h2>
+      <span class="hint" id="hidden-note"></span>
+    </div>
+    <ol class="stops" id="results"></ol>
+  </section>
+
+  <section class="notes">
+    <p><b>Amber figures are estimates</b> from distance, for drawing up the shortlist. Tap <i>Check fares</i>, look up the real price, and type it in. Green figures are ones you entered, and they're what the ranking trusts.</p>
+    <p>Trainline, TrainPal and the train companies all sell the same industry fares, so National Rail shows the base price. Booking fees and split tickets can make a retailer slightly cheaper.</p>
+    <p>Station locations: <a href="https://github.com/davwheat/uk-railway-stations" target="_blank" rel="noopener">uk-railway-stations</a> (ODbL). Your trip and prices stay in this browser.</p>
+  </section>
+</div>
+
+<script src="stations.js"></script>
+<script src="core.js"></script>
+<script>
+(function () {
+  const C = window.MeetCore;
+  const STATIONS = window.STATIONS.map(([name, crs, lat, lng]) => ({ name, crs, lat, lng }));
+  const STORE_KEY = 'pickup-station-v1';
+
+  // Example trip: Leeds driver, London friend, golf near Leicester.
+  const EXAMPLE = {
+    destination: 'Leicester',
+    driver: 'Leeds',
+    travellers: [{ name: 'Friend', from: 'London St Pancras International' }],
+    when: nextSaturdayMorning(),
+    maxDetour: C.DEFAULTS.maxDetourMinutes,
+    fuel: C.DEFAULTS.fuelPerMile,
+    driverTime: C.DEFAULTS.driverTimePerHour,
+    travellerTime: C.DEFAULTS.travellerTimePerHour,
+    known: {},
+    hidden: [],
+  };
+
+  let state = load() || structuredClone(EXAMPLE);
+
+  const $ = (id) => document.getElementById(id);
+  const fields = ['destination', 'driver', 'when', 'maxDetour', 'fuel', 'driverTime', 'travellerTime'];
+
+  $('station-list').innerHTML = STATIONS.map((s) => `<option value="${esc(s.name)}">`).join('');
+  for (const f of fields) {
+    $(f).value = state[f];
+    $(f).addEventListener('change', () => { state[f] = $(f).value; save(); render(); });
+  }
+  $('add-traveller').addEventListener('click', () => {
+    state.travellers.push({ name: `Person ${state.travellers.length + 1}`, from: '' });
+    save(); renderTravellers(); render();
+  });
+  $('trip').addEventListener('submit', (e) => e.preventDefault());
+
+  function renderTravellers() {
+    $('travellers').innerHTML = state.travellers.map((t, i) => `
+      <div class="traveller">
+        <div class="field who"><label for="tname-${i}">Name</label><input id="tname-${i}" data-i="${i}" data-k="name" value="${esc(t.name)}"></div>
+        <div class="field"><label for="tfrom-${i}">From station</label><input id="tfrom-${i}" data-i="${i}" data-k="from" list="station-list" value="${esc(t.from)}"></div>
+        <button type="button" class="icon-btn ghost" data-remove="${i}" aria-label="Remove ${esc(t.name)}" ${state.travellers.length < 2 ? 'disabled' : ''}>Remove</button>
+      </div>`).join('');
+  }
+  $('travellers').addEventListener('change', (e) => {
+    const { i, k } = e.target.dataset;
+    if (i === undefined) return;
+    state.travellers[i][k] = e.target.value;
+    save(); render();
+  });
+  $('travellers').addEventListener('click', (e) => {
+    const i = e.target.dataset.remove;
+    if (i === undefined) return;
+    state.travellers.splice(Number(i), 1);
+    save(); renderTravellers(); render();
+  });
+
+  $('results').addEventListener('change', (e) => {
+    const { key, k } = e.target.dataset;
+    if (!key) return;
+    const v = e.target.value.trim() === '' ? undefined : Number(e.target.value);
+    state.known[key] = { ...state.known[key], [k]: Number.isFinite(v) ? v : undefined };
+    save(); render();
+  });
+  $('results').addEventListener('click', (e) => {
+    const crs = e.target.dataset.hide;
+    if (!crs) return;
+    state.hidden.push(crs);
+    save(); render();
+  });
+  $('hidden-note').addEventListener('click', (e) => {
+    if (e.target.id !== 'restore') return;
+    state.hidden = [];
+    save(); render();
+  });
+
+  function render() {
+    const destination = C.parsePlace(state.destination, STATIONS);
+    const driver = C.parsePlace(state.driver, STATIONS);
+    $('destination').classList.toggle('invalid', !destination);
+    $('driver').classList.toggle('invalid', !driver);
+    const travellers = state.travellers.map((t, i) => {
+      const origin = C.parsePlace(t.from, STATIONS);
+      const input = document.getElementById(`tfrom-${i}`);
+      if (input) input.classList.toggle('invalid', !origin);
+      return origin && { name: t.name || `Person ${i + 1}`, origin };
+    });
+
+    const problem = !destination ? 'Pick where everyone ends up.'
+      : !driver ? "Pick where the driver sets off from."
+      : travellers.some((t) => !t) ? 'Pick a station for everyone coming by train.'
+      : null;
+    $('hidden-note').innerHTML = state.hidden.length
+      ? `${state.hidden.length} ruled out · <button type="button" class="ghost" id="restore">Bring back</button>` : '';
+    if (problem) { $('results').innerHTML = `<li class="empty">${problem} Station names come up as you type.</li>`; return; }
+
+    const ranked = C.rankStations(STATIONS, { driver, destination, travellers }, state.known, state.hidden, {
+      maxDetourMinutes: num(state.maxDetour, C.DEFAULTS.maxDetourMinutes),
+      fuelPerMile: num(state.fuel, C.DEFAULTS.fuelPerMile),
+      driverTimePerHour: num(state.driverTime, C.DEFAULTS.driverTimePerHour),
+      travellerTimePerHour: num(state.travellerTime, C.DEFAULTS.travellerTimePerHour),
+    });
+    if (!ranked.length) { $('results').innerHTML = '<li class="empty">No stations within that detour. Allow a longer detour under "How costs are weighed".</li>'; return; }
+
+    const when = new Date(state.when);
+    $('results').innerHTML = ranked.map((r, idx) => `
+      <li class="stop ${idx === 0 ? 'best' : ''}">
+        <div class="rank">${idx + 1}</div>
+        <h3>${esc(r.station.name)}<span class="crs">${r.station.crs}</span></h3>
+        <div class="total">${money(r.total)}<small>trip cost</small></div>
+        <div class="stop-main">
+          <div class="chips">
+            <span class="chip drive">${r.detourMinutes < 0.5 ? 'No detour' : `+${Math.round(r.detourMinutes)} min drive · ${Math.round(r.detourMiles)} mi`}</span>
+            <span class="chip ${r.allFaresReal ? 'real' : 'est'}">${money(r.fares)} in fares${r.allFaresReal ? '' : ' (est.)'}</span>
+          </div>
+          <div class="legs">${r.legs.map((l) => {
+            const key = C.legKey(l.fromCrs, r.station.crs);
+            const real = state.known[key] || {};
+            return `<div class="leg">
+              <div class="leg-who"><b>${esc(l.traveller)}</b> from ${l.fromCrs}
+                <span>${Math.round(l.minutes)} min${l.minutesIsReal ? '' : ' est.'} · ${money(l.fare)}${l.fareIsReal ? '' : ' est.'}</span></div>
+              <div class="field"><label for="f-${key}">Real fare £</label><input id="f-${key}" type="number" inputmode="decimal" min="0" step="0.01" data-key="${key}" data-k="fare" value="${real.fare ?? ''}" placeholder="${l.fare.toFixed(2)}"></div>
+              <div class="field"><label for="m-${key}">Minutes</label><input id="m-${key}" type="number" inputmode="numeric" min="0" step="1" data-key="${key}" data-k="minutes" value="${real.minutes ?? ''}" placeholder="${Math.round(l.minutes)}"></div>
+              <a class="btn rail" href="${C.nationalRailUrl(l.fromCrs, r.station.crs, when)}" target="_blank" rel="noopener">Check fares ↗</a>
+            </div>`;
+          }).join('')}</div>
+          <div class="actions">
+            <a class="btn road" href="${C.drivingUrl(driver, r.station, destination)}" target="_blank" rel="noopener">Driving route ↗</a>
+            <button type="button" class="ghost" data-hide="${r.station.crs}">Rule out</button>
+          </div>
+        </div>
+      </li>`).join('');
+  }
+
+  function num(v, fallback) { const n = Number(v); return v === '' || !Number.isFinite(n) ? fallback : n; }
+  function money(n) { return '£' + n.toFixed(2); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY));
+      return s && Array.isArray(s.travellers) ? { ...structuredClone(EXAMPLE), ...s } : null;
+    } catch (e) { return null; }
+  }
+  function nextSaturdayMorning() {
+    const d = new Date();
+    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
+    d.setHours(8, 0, 0, 0);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  renderTravellers();
+  render();
+})();
+</script>
